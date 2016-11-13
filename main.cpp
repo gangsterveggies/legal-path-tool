@@ -174,6 +174,29 @@ void printTerm(Node* cur)
   }
 }
 
+char labelTerm(Node* cur, char label)
+{
+  if (cur == NULL)
+    return label;
+
+  if (cur->isVar)
+  {
+    cur->label = label++;
+    return label;
+  }
+  else if (cur->isLambda)
+  {
+    cur->label = label++;
+    return labelTerm(cur->abt, label);
+  }
+  else
+  {
+    cur->label = label++;
+    char tmp = labelTerm(cur->abt, label);
+    return labelTerm(cur->arg, tmp);
+  }
+}
+
 int main()
 {
   scanf(" %s", input);
@@ -185,6 +208,8 @@ int main()
 
   printTerm(term);
   printf("\n");
+
+  labelTerm(term, 'a');
 
   return 0;
 }
