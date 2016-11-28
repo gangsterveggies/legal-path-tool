@@ -20,7 +20,7 @@ Node* labelNode[MXLABEL];
 vector<Path> atPaths, lbPaths, vrPaths;
 vector<Path> atNew, lbNew, vrNew;
 vector<Path> atPrev, lbPrev, vrPrev;
-int cur;
+int pos;
 
 Node* mknode()
 {
@@ -32,7 +32,7 @@ Node* mknode()
 
 void serror(const char* msg)
 {
-  fprintf(stderr, "Error on col %d: %s\n", cur + 1, msg);
+  fprintf(stderr, "Error on col %d: %s\n", pos + 1, msg);
   exit(1);
 }
 
@@ -65,18 +65,18 @@ string reverse(string s)
 
 bool curChar(char val)
 {
-  return val == input[cur];
+  return val == input[pos];
 }
 
 char curChar()
 {
-  return input[cur];
+  return input[pos];
 }
 
 char nextChar()
 {
   char s = curChar();
-  cur++;
+  pos++;
   return s;
 }
 
@@ -145,10 +145,18 @@ Node* parseTerm()
         c = tmp;
       }
 
+      s = nextChar();
+      if (s != '(')
+        serror("lambda arguments must be enclosed in parenthesis");
+
       c->abt = parseTerm();
       if (c->abt == NULL)
         serror("invalid lambda content");
       c->abt->par = c;
+
+      s = nextChar();
+      if (s != ')')
+        serror("invalid syntax, expecting )");
 
       rewire(root, cur, r);
     }
@@ -168,10 +176,15 @@ Node* parseTerm()
 
       rewire(root, cur, r);
 
-      curChar(')');
+      if (!curChar(')'))
+        serror("invalid syntax, expecting )");
+      nextChar();
     }
     else if (s == ')' || s == '\0')
+    {
+      pos--;
       break;
+    }
     else
       serror("invalid character");
   }
@@ -330,7 +343,7 @@ int main()
 {
   scanf(" %s", input);
 
-  cur = 0;
+  pos = 0;
   Node* term = parseTerm();
   if (term == NULL)
     serror("malformed expression");
@@ -342,8 +355,6 @@ int main()
 
   printTerm(term, 1);
   printf("\n");
-
-  scanf("%*c");
 
   initialPaths(term);
   int changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
