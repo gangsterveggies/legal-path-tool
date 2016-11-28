@@ -3,6 +3,7 @@
 using namespace std;
 
 #define MXTERM 1000
+#define MXLABEL 50
 
 struct Node
 {
@@ -12,7 +13,13 @@ struct Node
   Node *abt, *arg, *par;
 };
 
+typedef string Path;
+
 char input[MXTERM];
+Node* labelNode[MXLABEL];
+vector<Path> atPaths, lbPaths, vrPaths;
+vector<Path> atNew, lbNew, vrNew;
+vector<Path> atPrev, lbPrev, vrPrev;
 int cur;
 
 Node* mknode()
@@ -29,9 +36,31 @@ void serror(const char* msg)
   exit(1);
 }
 
+bool nVar(Node* nd)
+{
+  return nd->isVar;
+}
+
+bool nLambda(Node* nd)
+{
+  return nd->isLambda;
+}
+
+bool nApp(Node* nd)
+{
+  return !nd->isLambda && !nd->isVar;
+}
+
 bool isVar(char s)
 {
   return (s >= 'a') && (s <= 'z');
+}
+
+string reverse(string s)
+{
+  string ns = s;
+  reverse(ns.begin(), ns.end());
+  return ns;
 }
 
 bool curChar(char val)
@@ -187,6 +216,8 @@ char labelTerm(Node* cur, char label)
   if (cur == NULL)
     return label;
 
+  labelNode[label - 'a'] = cur;
+
   if (cur->isVar)
   {
     cur->label = label++;
@@ -205,6 +236,96 @@ char labelTerm(Node* cur, char label)
   }
 }
 
+void addPath(Path path)
+{
+  Node* base = labelNode[path.back() - 'a'];
+
+  if (nVar(base))
+    vrNew.push_back(path);
+  else if (nLambda(base))
+    lbNew.push_back(path);
+  else if (nApp(base))
+    atNew.push_back(path);
+}
+
+void initialPaths(Node* cur)
+{
+  if (cur == NULL)
+    return;
+
+  if (cur->isVar)
+    return;
+  else if (cur->isLambda)
+    initialPaths(cur->abt);
+  else
+  {
+    Node* base = cur->abt;
+    string path = "";
+    path += base->label;
+
+    addPath(path);
+
+    initialPaths(cur->abt);
+    initialPaths(cur->arg);
+  }  
+}
+
+void lambdaCompose(Path lpath, Path vpath)
+{
+  Node* lnode = labelNode[lpath.back() - 'a'];
+  Node* vnode = labelNode[vpath.back() - 'a'];
+
+  if (lnode->var != vnode->var)
+    return;
+
+  printf("\\ composing %s with %s\n", lpath.c_str(), vpath.c_str());
+
+  string result = "";
+  result += labelNode[lpath.front() - 'a']->par->arg->label;
+
+  Path npath = vpath + reverse(lpath) + result;
+  addPath(npath);
+}
+
+void atCompose(Path lpath, Path apath)
+{
+  Node* lnode = labelNode[lpath.back() - 'a'];
+  Node* lnode2 = labelNode[lpath.front() - 'a'];
+  Node* anode = labelNode[apath.back() - 'a'];
+
+  if (lnode2->par != anode)
+    return;
+
+  printf("@ composing %s with %s\n", lpath.c_str(), apath.c_str());
+
+  string result = "";
+  result += lnode->abt->label;
+
+  Path npath = apath + lpath + result;
+  addPath(npath);
+}
+
+void printPaths()
+{
+  printf("@-paths:\n");
+  for (auto path : atPaths)
+    printf("%s\n", path.c_str());
+  for (auto path : atPrev)
+    printf("%s\n", path.c_str());
+
+  printf("\n\\-paths:\n");
+  for (auto path : lbPaths)
+    printf("%s\n", path.c_str());
+  for (auto path : lbPrev)
+    printf("%s\n", path.c_str());
+
+  printf("\nv-paths:\n");
+  for (auto path : vrPaths)
+    printf("%s\n", path.c_str());
+  for (auto path : vrPrev)
+    printf("%s\n", path.c_str());
+}
+
 int main()
 {
   scanf(" %s", input);
@@ -221,6 +342,73 @@ int main()
 
   printTerm(term, 1);
   printf("\n");
+
+  scanf("%*c");
+
+  initialPaths(term);
+  int changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
+
+  for (auto path : atNew)
+    atPrev.push_back(path);
+
+  for (auto path : lbNew)
+    lbPrev.push_back(path);
+
+  for (auto path : vrNew)
+    vrPrev.push_back(path);
+  atNew.clear(), lbNew.clear(), vrNew.clear();
+
+  while (changes)
+  {
+    printPaths();
+    printf("\n");
+
+    for (auto lpath : lbPrev)
+      for (auto vpath : vrPrev)
+        lambdaCompose(lpath, vpath);
+
+    for (auto lpath : lbPaths)
+      for (auto vpath : vrPrev)
+        lambdaCompose(lpath, vpath);
+
+    for (auto lpath : lbPrev)
+      for (auto vpath : vrPaths)
+        lambdaCompose(lpath, vpath);
+
+    for (auto lpath : lbPrev)
+      for (auto apath : atPrev)
+        atCompose(lpath, apath);
+
+    for (auto lpath : lbPaths)
+      for (auto apath : atPrev)
+        atCompose(lpath, apath);
+
+    for (auto lpath : lbPrev)
+      for (auto apath : atPaths)
+        atCompose(lpath, apath);
+
+    changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
+
+    for (auto path : atPrev)
+      atPaths.push_back(path);
+
+    for (auto path : lbPrev)
+      lbPaths.push_back(path);
+
+    for (auto path : vrPrev)
+      vrPaths.push_back(path);
+    atPrev.clear(), lbPrev.clear(), vrPrev.clear();
+
+    for (auto path : atNew)
+      atPrev.push_back(path);
+
+    for (auto path : lbNew)
+      lbPrev.push_back(path);
+
+    for (auto path : vrNew)
+      vrPrev.push_back(path);
+    atNew.clear(), lbNew.clear(), vrNew.clear();
+  }
 
   return 0;
 }
