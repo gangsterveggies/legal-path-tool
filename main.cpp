@@ -139,14 +139,10 @@ Node* parseTerm()
 
       rewire(root, cur, r);
 
-      nextChar();
       curChar(')');
     }
     else if (s == ')' || s == '\0')
-    {
-      cur--;
       break;
-    }
     else
       serror("invalid character");
   }
@@ -154,23 +150,35 @@ Node* parseTerm()
   return root;
 }
 
-void printTerm(Node* cur)
+void printTerm(Node* cur, int pLabel = 0)
 {
   if (cur == NULL)
     return;
 
   if (cur->isVar)
+  {
+    if (pLabel)
+      printf("(");
     printf("%c", cur->var);
+    if (pLabel)
+      printf("^%c)", cur->label);
+  }
   else if (cur->isLambda)
   {
     printf("(\\%c.", cur->var);
-    printTerm(cur->abt);
+    printTerm(cur->abt, pLabel);
     printf(")");
+    if (pLabel)
+      printf("^%c", cur->label);
   }
   else
   {
-    printTerm(cur->abt);
-    printTerm(cur->arg);
+    if (pLabel)
+      printf("(");
+    printTerm(cur->abt, pLabel);
+    printTerm(cur->arg, pLabel);
+    if (pLabel)
+      printf(")^%c", cur->label);
   }
 }
 
@@ -210,6 +218,9 @@ int main()
   printf("\n");
 
   labelTerm(term, 'a');
+
+  printTerm(term, 1);
+  printf("\n");
 
   return 0;
 }
