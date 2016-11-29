@@ -4,6 +4,7 @@ using namespace std;
 
 #define MXTERM 1000
 #define MXLABEL 50
+#define MXLEVEL 20
 
 struct Node
 {
@@ -20,6 +21,7 @@ Node* labelNode[MXLABEL];
 vector<Path> atPaths, lbPaths, vrPaths;
 vector<Path> atNew, lbNew, vrNew;
 vector<Path> atPrev, lbPrev, vrPrev;
+vector<Path> S[MXLEVEL];
 int pos;
 
 Node* mknode()
@@ -318,23 +320,46 @@ void atCompose(Path lpath, Path apath)
   addPath(npath);
 }
 
-void printPaths()
+void lambdaComposeFromList(vector<Path>& llist, vector<Path>& vlist)
 {
+  for (auto lpath : llist)
+    for (auto vpath : vlist)
+      lambdaCompose(lpath, vpath);
+}
+
+void atComposeFromList(vector<Path>& llist, vector<Path>& alist)
+{
+  for (auto lpath : llist)
+    for (auto apath : alist)
+      atCompose(lpath, apath);
+}
+
+void printPaths(int slevel)
+{
+  if (slevel > 0)
+    printf("Level %d:\n", slevel);
+
   printf("@-paths:\n");
-  for (auto path : atPaths)
-    printf("%s\n", path.c_str());
+  if (slevel == 0)
+    for (auto path : atPaths)
+      printf("%s\n", path.c_str());
   for (auto path : atPrev)
     printf("%s\n", path.c_str());
 
   printf("\n\\-paths:\n");
-  for (auto path : lbPaths)
-    printf("%s\n", path.c_str());
+  if (slevel == 0)
+    for (auto path : lbPaths)
+      printf("%s\n", path.c_str());
   for (auto path : lbPrev)
     printf("%s\n", path.c_str());
 
+  for (auto path : lbPrev)
+    S[slevel - 1].push_back(path);
+
   printf("\nv-paths:\n");
-  for (auto path : vrPaths)
-    printf("%s\n", path.c_str());
+  if (slevel == 0)
+    for (auto path : vrPaths)
+      printf("%s\n", path.c_str());
   for (auto path : vrPrev)
     printf("%s\n", path.c_str());
 }
@@ -369,36 +394,15 @@ int main()
     vrPrev.push_back(path);
   atNew.clear(), lbNew.clear(), vrNew.clear();
 
+  int iter = 1;
   while (changes)
   {
-    printPaths();
+    printPaths(iter++);
     printf("\n");
 
-    for (auto lpath : lbPrev)
-      for (auto vpath : vrPrev)
-        lambdaCompose(lpath, vpath);
-
-    for (auto lpath : lbPaths)
-      for (auto vpath : vrPrev)
-        lambdaCompose(lpath, vpath);
-
-    for (auto lpath : lbPrev)
-      for (auto vpath : vrPaths)
-        lambdaCompose(lpath, vpath);
-
-    for (auto lpath : lbPrev)
-      for (auto apath : atPrev)
-        atCompose(lpath, apath);
-
-    for (auto lpath : lbPaths)
-      for (auto apath : atPrev)
-        atCompose(lpath, apath);
-
-    for (auto lpath : lbPrev)
-      for (auto apath : atPaths)
-        atCompose(lpath, apath);
-
-    changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
+    lambdaComposeFromList(lbPrev, vrPrev);
+    lambdaComposeFromList(lbPaths, vrPrev);
+    lambdaComposeFromList(lbPrev, vrPaths);
 
     for (auto path : atPrev)
       atPaths.push_back(path);
@@ -418,7 +422,40 @@ int main()
 
     for (auto path : vrNew)
       vrPrev.push_back(path);
+
+    changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
     atNew.clear(), lbNew.clear(), vrNew.clear();
+
+    atComposeFromList(lbPrev, atPrev);
+    atComposeFromList(lbPaths, atPrev);
+    atComposeFromList(lbPrev, atPaths);
+
+    for (auto path : atNew)
+      atPrev.push_back(path);
+
+    for (auto path : lbNew)
+      lbPrev.push_back(path);
+
+    for (auto path : vrNew)
+      vrPrev.push_back(path);
+
+    changes = changes || !atNew.empty() || !lbNew.empty() || !vrNew.empty();
+
+    atNew.clear(), lbNew.clear(), vrNew.clear();
+  }
+
+  for (int i = 0; i < iter; i++)
+  {
+    printf("S%d: {", i + 1);
+
+    for (auto path : S[i])
+    {
+      printf("%s", path.c_str());
+      if (path != S[i].back())
+        printf(",");
+    }
+
+    printf("}\n");
   }
 
   return 0;
