@@ -217,12 +217,12 @@ void printTerm(Node* cur, int pLabel = 0)
   }
   else
   {
-    if (pLabel)
-      printf("(");
+    printf("(");
     printTerm(cur->abt, pLabel);
     printTerm(cur->arg, pLabel);
+    printf(")");
     if (pLabel)
-      printf(")^%c", cur->label);
+      printf("^%c", cur->label);
   }
 }
 
@@ -395,7 +395,7 @@ int main()
   atNew.clear(), lbNew.clear(), vrNew.clear();
 
   int iter = 1;
-  while (changes)
+  for (; iter < 100 && changes; )
   {
     printPaths(iter++);
     printf("\n");
@@ -444,7 +444,7 @@ int main()
     atNew.clear(), lbNew.clear(), vrNew.clear();
   }
 
-  for (int i = 0; i < iter; i++)
+  for (int i = 0; i < iter - 1; i++)
   {
     printf("S%d: {", i + 1);
 
