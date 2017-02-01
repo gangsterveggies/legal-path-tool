@@ -466,6 +466,8 @@ int fillPaths(Node* term)
   atPrev.clear(), lbPrev.clear(), vrPrev.clear();
 
   initialPaths(term);
+  atComposeFromList(lbNew, atNew);
+
   int changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
 
   for (auto path : atNew)
@@ -603,8 +605,8 @@ void replace_n(Node* term, string lb, int n)
       cr = cr->abt;
     }
 
-    cr->abt = nterm;
-    cr->arg = qterm;
+    cr->abt = qterm;
+    cr->arg = nterm;
   }
   else
   {
@@ -771,7 +773,7 @@ int main(int argc, char** argv)
           if (notLinear(path))
           {
             linearize(path, term);
-            //linear = false;
+            linear = false;
             goto reset;
           }
 
