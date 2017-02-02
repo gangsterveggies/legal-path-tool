@@ -7,13 +7,14 @@
 using namespace std;
 
 #define MXTERM 1000
-#define MXITER 20
+#define MXITER 10
 #define MXLABEL 50
 #define MXLEVEL 20
 
 #define TYPE_PRINT 0
 #define TYPE_LINEAR 1
 #define TYPE_TERM 2
+#define TYPE_REDUCE 3
 
 struct Node
 {
@@ -88,6 +89,7 @@ struct Path
 
 char input[MXTERM];
 map<string, Node*> labelNode;
+map<string, char> varMap;
 vector<Path> atPaths, lbPaths, vrPaths;
 vector<Path> atNew, lbNew, vrNew;
 vector<Path> atPrev, lbPrev, vrPrev;
@@ -338,6 +340,40 @@ char labelTerm(Node* cur, char label)
   }
 }
 
+char varTerm(Node* cur, char label)
+{
+  if (cur == NULL)
+    return label;
+
+  if (cur->isVar)
+  {
+    if (cur->var.size() != 1)
+    {
+      if (varMap.count(cur->var) == 0)
+        varMap[cur->var] = label++;
+      cur->var = string(1, varMap[cur->var]);
+    }
+
+    return label;
+  }
+  else if (cur->isLambda)
+  {
+    if (cur->var.size() != 1)
+    {
+      if (varMap.count(cur->var) == 0)
+        varMap[cur->var] = label++;
+      cur->var = string(1, varMap[cur->var]);
+    }
+
+    return varTerm(cur->abt, label);
+  }
+  else
+  {
+    char tmp = varTerm(cur->abt, label);
+    return varTerm(cur->arg, tmp);
+  }
+}
+
 void addPath(Path path)
 {
   Node* base = labelNode[path.back()];
@@ -483,6 +519,7 @@ int fillPaths(Node* term)
   int iter = 1;
   for (; iter < MXITER && changes; )
   {
+    printf("%d\n", iter);
     S[iter - 1].clear();
 
     if (execType == TYPE_PRINT)
@@ -561,21 +598,23 @@ bool notLinear(Path p)
   return varCount(n->abt, n->var) > 1;
 }
 
-Node* copyTerm(Node* org, Node* dst)
+Node* copyTerm(Node* org, Node* dst, Node* prev)
 {
   if (org == NULL)
     return NULL;
 
+  dst->par = prev;
+
   if (nApp(org))
   {
-    dst->abt = copyTerm(org->abt, mknode());
-    dst->arg = copyTerm(org->arg, mknode());
+    dst->abt = copyTerm(org->abt, mknode(), dst);
+    dst->arg = copyTerm(org->arg, mknode(), dst);
   }
   else if (nLambda(org))
   {
     dst->isLambda = true;
     dst->var = org->var;
-    dst->abt = copyTerm(org->abt, mknode());
+    dst->abt = copyTerm(org->abt, mknode(), dst);
   }
   else
   {
@@ -601,12 +640,16 @@ void replace_n(Node* term, string lb, int n)
     for (int i = 1; i < n; i++)
     {
       cr->abt = mknode();
-      cr->arg = copyTerm(nterm, mknode());
+      cr->arg = copyTerm(nterm, mknode(), cr);
+      cr->abt->par = cr;
+      cr->arg->par = cr;
       cr = cr->abt;
     }
 
     cr->abt = qterm;
     cr->arg = nterm;
+    cr->abt->par = cr;
+    cr->arg->par = cr;
   }
   else
   {
@@ -666,12 +709,14 @@ void replace(Node* term, string lb, int n)
       {
         cr->abt = mknode();
         cr->abt->isLambda = true;
+        cr->abt->par = cr;
         cr = cr->abt;
       }
     }
 
     cleanup(fn, base, 1);
     cr->abt = fn;
+    cr->abt->par = cr;
   }
   else
   {
@@ -699,6 +744,85 @@ void linearize(Path p, Node* term)
   printf(" linear\n");
 }
 
+Node* substitute(Node* term, Node* sb, string var)
+{
+  if (term == NULL)
+    return NULL;
+
+  if (nApp(term))
+  {
+    term->abt = substitute(term->abt, sb, var);
+    term->arg = substitute(term->arg, sb, var);
+
+    return term;
+  }
+  else if (nLambda(term) && term->var != var)
+  {
+    term->abt = substitute(term->abt, sb, var);
+    return term;
+  }
+  else if (term->var != var)
+    return term;
+  else
+    return copyTerm(sb, mknode(), term->par);
+}
+
+void betaReduce(Node* term)
+{
+  term->abt->abt = substitute(term->abt->abt, term->arg, term->abt->var);
+
+  Node* abt = term->abt->abt;
+  term->var = abt->var;
+  term->isLambda = abt->isLambda;
+  term->isVar = abt->isVar;
+  term->abt = abt->abt;
+  term->abt->par = term;
+  term->arg = abt->arg;
+  if (term->arg != NULL)
+    term->arg->par = term;
+}
+
+Node* getRedex(Node* term)
+{
+  if (term == NULL)
+    return NULL;
+
+  if (nApp(term))
+  {
+    if (nLambda(term->abt))
+      return term;
+
+    Node* a = getRedex(term->abt);
+    if (a != NULL)
+      return a;
+    return getRedex(term->arg);
+  }
+  else if (nLambda(term))
+    return getRedex(term->abt);
+
+  return NULL;
+}
+
+Node* normalize(Node* term, int verbose = 0)
+{
+  Node* fin = copyTerm(term, mknode(), NULL);
+  Node* redux = getRedex(fin);
+
+  while (redux != NULL)
+  {
+    betaReduce(redux);
+    redux = getRedex(fin);
+
+    if (verbose)
+    {
+      printTerm(fin);
+      printf("\n");
+    }
+  }
+
+  return fin;
+}
+
 int main(int argc, char** argv)
 {
   execType = TYPE_PRINT;
@@ -714,6 +838,8 @@ int main(int argc, char** argv)
       execType = TYPE_LINEAR;
     else if (argv[i][1] == 't')
       execType = TYPE_TERM;
+    else if (argv[i][1] == 'r')
+      execType = TYPE_REDUCE;
   }
 
   scanf(" %s", input);
@@ -773,7 +899,7 @@ int main(int argc, char** argv)
           if (notLinear(path))
           {
             linearize(path, term);
-            linear = false;
+            //linear = false;
             goto reset;
           }
 
@@ -782,6 +908,8 @@ int main(int argc, char** argv)
     }
 
     labelTerm(term, 'a');
+    varMap.clear();
+    varTerm(term, 'a');
 
     printTerm(term, 0);
     printf("\n");
@@ -802,6 +930,16 @@ int main(int argc, char** argv)
 
       printf("}\n");
     }
+  }
+  else if (execType == TYPE_REDUCE)
+  {
+    printTerm(term);
+    printf("\n");
+
+    Node* final = normalize(term, 1);
+
+    printTerm(final);
+    printf("\n");
   }
 
   return 0;
