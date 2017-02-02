@@ -181,11 +181,15 @@ void rewire(Node* &root, Node* &cur, Node* r)
     Node* tmp = mknode();
     tmp->abt = cur;
     tmp->arg = r;
+
     if (cur != NULL)
     {
       tmp->par = cur->par;
       cur->par = tmp;
     }
+
+    if (tmp->arg != NULL)
+      tmp->arg->par = tmp;
 
     if (cur == root)
       root = tmp;
@@ -296,9 +300,16 @@ void printTerm(Node* cur, int pLabel = 0)
   }
   else if (cur->isLambda)
   {
-    printf("(\\%s.", cur->var.c_str());
+    printf("\\%s.", cur->var.c_str());
+
+    if (!nApp(cur->abt))
+      printf("(");
+
     printTerm(cur->abt, pLabel);
-    printf(")");
+
+    if (!nApp(cur->abt))
+      printf(")");
+
     if (pLabel)
       printf("^%s", cur->label.c_str());
   }
@@ -347,31 +358,49 @@ char varTerm(Node* cur, char label)
 
   if (cur->isVar)
   {
-    if (cur->var.size() != 1)
-    {
-      if (varMap.count(cur->var) == 0)
-        varMap[cur->var] = label++;
-      cur->var = string(1, varMap[cur->var]);
-    }
+    if (varMap.count(cur->var) == 0)
+      varMap[cur->var] = label++;
+    cur->var = string(1, varMap[cur->var]);
 
     return label;
   }
   else if (cur->isLambda)
   {
-    if (cur->var.size() != 1)
-    {
-      if (varMap.count(cur->var) == 0)
-        varMap[cur->var] = label++;
-      cur->var = string(1, varMap[cur->var]);
-    }
+    char prev = '0';
 
-    return varTerm(cur->abt, label);
+    if (varMap.count(cur->var) != 0)
+      prev = varMap[cur->var];
+
+    varMap[cur->var] = label++;
+
+    cur->var = string(1, varMap[cur->var]);
+
+    char ls = varTerm(cur->abt, label);
+
+    varMap[cur->var] = prev;
+    return ls;
   }
   else
   {
     char tmp = varTerm(cur->abt, label);
     return varTerm(cur->arg, tmp);
   }
+}
+
+void checkPar(Node* term, Node* p)
+{
+  if (term == NULL)
+    return;
+
+  assert(term->par == p);
+
+  if (nApp(term))
+  {
+    checkPar(term->abt, term);
+    checkPar(term->arg, term);
+  }
+  else if (nLambda(term))
+    checkPar(term->abt, term);
 }
 
 void addPath(Path path)
@@ -519,7 +548,6 @@ int fillPaths(Node* term)
   int iter = 1;
   for (; iter < MXITER && changes; )
   {
-    printf("%d\n", iter);
     S[iter - 1].clear();
 
     if (execType == TYPE_PRINT)
@@ -754,11 +782,15 @@ Node* substitute(Node* term, Node* sb, string var)
     term->abt = substitute(term->abt, sb, var);
     term->arg = substitute(term->arg, sb, var);
 
+    term->abt->par = term;
+    term->arg->par = term;
+
     return term;
   }
   else if (nLambda(term) && term->var != var)
   {
     term->abt = substitute(term->abt, sb, var);
+    term->abt->par = term;
     return term;
   }
   else if (term->var != var)
@@ -806,6 +838,10 @@ Node* getRedex(Node* term)
 Node* normalize(Node* term, int verbose = 0)
 {
   Node* fin = copyTerm(term, mknode(), NULL);
+
+  varMap.clear();
+  varTerm(fin, 'a');
+
   Node* redux = getRedex(fin);
 
   while (redux != NULL)
@@ -899,7 +935,11 @@ int main(int argc, char** argv)
           if (notLinear(path))
           {
             linearize(path, term);
-            //linear = false;
+
+            printTerm(term);
+            printf("\n");
+            checkPar(term, NULL);
+            linear = false;
             goto reset;
           }
 
