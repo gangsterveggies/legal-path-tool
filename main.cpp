@@ -15,6 +15,7 @@ using namespace std;
 #define TYPE_LINEAR 1
 #define TYPE_TERM 2
 #define TYPE_REDUCE 3
+#define TYPE_WEAK 4
 
 struct Node
 {
@@ -94,7 +95,7 @@ vector<Path> atPaths, lbPaths, vrPaths;
 vector<Path> atNew, lbNew, vrNew;
 vector<Path> atPrev, lbPrev, vrPrev;
 vector<Path> S[MXLEVEL];
-int pos, execType;
+int pos, execType, weakLevel;
 
 Node* mknode()
 {
@@ -796,7 +797,10 @@ Node* substitute(Node* term, Node* sb, string var)
   else if (term->var != var)
     return term;
   else
+  {
+    weakLevel++;
     return copyTerm(sb, mknode(), term->par);
+  }
 }
 
 void betaReduce(Node* term)
@@ -835,7 +839,7 @@ Node* getRedex(Node* term)
   return NULL;
 }
 
-Node* normalize(Node* term, int verbose = 0)
+Node* normalize(Node* term, bool &isWeak, int verbose = 0)
 {
   Node* fin = copyTerm(term, mknode(), NULL);
 
@@ -843,10 +847,14 @@ Node* normalize(Node* term, int verbose = 0)
   varTerm(fin, 'a');
 
   Node* redux = getRedex(fin);
+  int mx = 0;
 
   while (redux != NULL)
   {
+    weakLevel = 0;
     betaReduce(redux);
+    mx = max(mx, weakLevel);
+
     redux = getRedex(fin);
 
     if (verbose)
@@ -855,6 +863,8 @@ Node* normalize(Node* term, int verbose = 0)
       printf("\n");
     }
   }
+
+  isWeak = mx <= 1;
 
   return fin;
 }
@@ -876,6 +886,8 @@ int main(int argc, char** argv)
       execType = TYPE_TERM;
     else if (argv[i][1] == 'r')
       execType = TYPE_REDUCE;
+    else if (argv[i][1] == 'w')
+      execType = TYPE_WEAK;
   }
 
   scanf(" %s", input);
@@ -976,10 +988,18 @@ int main(int argc, char** argv)
     printTerm(term);
     printf("\n");
 
-    Node* final = normalize(term, 1);
+    bool tmp;
+    Node* final = normalize(term, tmp, 1);
 
     printTerm(final);
     printf("\n");
+  }
+  else if (execType == TYPE_WEAK)
+  {
+    bool isWeak;
+    Node* final = normalize(term, isWeak, 1);
+
+    printf("The term is %s linear\n", isWeak ? "weak" : "not weak");
   }
 
   return 0;
