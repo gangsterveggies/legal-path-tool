@@ -2,7 +2,9 @@
 #include <assert.h>
 #include <vector>
 #include <map>
+#include <set>
 #include <algorithm>
+#include <string>
 
 using namespace std;
 
@@ -16,6 +18,9 @@ using namespace std;
 #define TYPE_TERM 2
 #define TYPE_REDUCE 3
 #define TYPE_WEAK 4
+#define TYPE_METRIC 5
+
+int subs = 0;
 
 struct Node
 {
@@ -86,6 +91,66 @@ struct Path
           return true;
       return false;
     }
+
+  bool operator< (const Path b) const
+    {
+      for (int i = 0; i < int(path.size()) && i < int(b.path.size()); i++)
+        if (path[i] != b.path[i])
+          return path[i] < b.path[i];
+      return path.size() < b.path.size();
+    }
+};
+
+struct PathMetric
+{
+  int s, n;
+  vector<int> mset;
+
+  const char* c_str()
+    {
+      string fin = "<";
+      fin += to_string(s);
+      fin += ",";
+      fin += to_string(n);
+      fin += ",{";
+
+      bool fs = true;
+      for (int i : mset)
+      {
+        if (!fs)
+          fin += ",";
+        fs = false;
+        fin += to_string(i);
+      }
+
+      fin += "}>";
+
+      return fin.c_str();
+    }
+
+  bool operator< (const PathMetric b) const
+    {
+      if (s != b.s)
+        return s > b.s;
+      if (n != b.n)
+        return n < b.n;
+      for (int i = 0; i < int(mset.size()) && i < int(b.mset.size()); i++)
+        if (mset[i] != b.mset[i])
+          return mset[i] < b.mset[i];
+      return mset.size() < b.mset.size();
+    }
+
+  bool cmp(PathMetric b)
+    {
+      if (s != b.s)
+        return s < b.s;
+      if (n != b.n)
+        return n < b.n;
+      for (int i = 0; i < int(mset.size()) && i < int(b.mset.size()); i++)
+        if (mset[i] != b.mset[i])
+          return mset[i] < b.mset[i];
+      return mset.size() < b.mset.size();
+    }
 };
 
 char input[MXTERM];
@@ -96,12 +161,14 @@ vector<Path> atNew, lbNew, vrNew;
 vector<Path> atPrev, lbPrev, vrPrev;
 vector<Path> S[MXLEVEL];
 int pos, execType, weakLevel;
+bool verbose = false;
 
 Node* mknode()
 {
   Node* n = new Node();
   n->isLambda = false;
   n->isVar = false;
+  n->label = "a";
   return n;
 }
 
@@ -128,7 +195,8 @@ bool nApp(Node* nd)
 
 bool isVar(char s)
 {
-  return (s >= 'a') && (s <= 'z');
+  return ((s >= 'a') && (s <= 'z')) ||
+    ((s >= '0') && (s <= '9'));
 }
 
 string itoa(int a)
@@ -151,6 +219,18 @@ Path reverse(Path s)
   vector<string> ns = s.path;
   reverse(ns.begin(), ns.end());
   return {ns};
+}
+
+string nextLabel(string s)
+{
+  if (s[0] == 'z')
+  {
+    s[0] = 'a';
+    s += '\'';
+  }
+  else
+    s[0]++;
+  return s;
 }
 
 bool curChar(char val)
@@ -211,13 +291,22 @@ Node* parseTerm()
     {
       Node* r = mknode(), *c;
       
-      vector<char> varList;
+      vector<string> varList;
       s = nextChar();
+      string vr = string(1, s);
       while (isVar(s))
       {
-        varList.push_back(s);
         s = nextChar();
+        if (s >= 'a' && s <= 'z')
+        {
+          varList.push_back(vr);
+          vr = string(1, s);
+        }
+        else if (s >= '0' && s <= '9')
+          vr += s;
       }
+      if (!vr.empty())
+          varList.push_back(vr);
 
       if (s != '.')
         serror("invalid lambda variable end character");
@@ -226,14 +315,14 @@ Node* parseTerm()
         serror("invalid variables for lambda");
 
       r->isLambda = true;
-      r->var = string(1, varList[0]);
+      r->var = varList[0];
       c = r;
 
       for (int i = 1; i < int(varList.size()); i++)
       {
         Node* tmp = mknode();
         tmp->isLambda = true;
-        tmp->var = string(1, varList[i]);
+        tmp->var = varList[i];
         tmp->par = c;
         c->abt = tmp;
         c = tmp;
@@ -317,37 +406,46 @@ void printTerm(Node* cur, int pLabel = 0)
   else
   {
     printf("(");
+
+    if (nLambda(cur->abt))
+      printf("(");
     printTerm(cur->abt, pLabel);
+    if (nLambda(cur->abt))
+      printf(")");
+
+    if (nLambda(cur->arg))
+      printf("(");
     printTerm(cur->arg, pLabel);
+    if (nLambda(cur->arg))
+      printf(")");
+
     printf(")");
     if (pLabel)
       printf("^%s", cur->label.c_str());
   }
 }
 
-char labelTerm(Node* cur, char label)
+string labelTerm(Node* cur, string label)
 {
   if (cur == NULL)
     return label;
 
-  string s = "";
-  s += label;
-  labelNode[s] = cur;
+  labelNode[label] = cur;
 
   if (cur->isVar)
   {
-    cur->label = label++;
-    return label;
+    cur->label = label;
+    return nextLabel(label);
   }
   else if (cur->isLambda)
   {
-    cur->label = label++;
-    return labelTerm(cur->abt, label);
+    cur->label = label;
+    return labelTerm(cur->abt, nextLabel(label));
   }
   else
   {
-    cur->label = label++;
-    char tmp = labelTerm(cur->abt, label);
+    cur->label = label;
+    string tmp = labelTerm(cur->abt, nextLabel(label));
     return labelTerm(cur->arg, tmp);
   }
 }
@@ -378,7 +476,11 @@ char varTerm(Node* cur, char label)
 
     char ls = varTerm(cur->abt, label);
 
-    varMap[cur->var] = prev;
+    if (prev != '0')
+      varMap[cur->var] = prev;
+    else if (varMap.count(cur->var) != 0)
+      varMap.erase(varMap.find(cur->var));
+
     return ls;
   }
   else
@@ -409,11 +511,26 @@ void addPath(Path path)
   Node* base = labelNode[path.back()];
 
   if (nVar(base))
-    vrNew.push_back(path);
+  {
+    if (find(vrNew.begin(), vrNew.end(), path) == vrNew.end() &&
+        find(vrPaths.begin(), vrPaths.end(), path) == vrPaths.end() &&
+        find(vrPrev.begin(), vrPrev.end(), path) == vrPrev.end())
+      vrNew.push_back(path);
+  }
   else if (nLambda(base))
-    lbNew.push_back(path);
+  {
+    if (find(lbNew.begin(), lbNew.end(), path) == lbNew.end() &&
+        find(lbPaths.begin(), lbPaths.end(), path) == lbPaths.end() &&
+        find(lbPrev.begin(), lbPrev.end(), path) == lbPrev.end())
+      lbNew.push_back(path);
+  }
   else if (nApp(base))
-    atNew.push_back(path);
+  {
+    if (find(atNew.begin(), atNew.end(), path) == atNew.end() &&
+        find(atPaths.begin(), atPaths.end(), path) == atPaths.end() &&
+        find(atPrev.begin(), atPrev.end(), path) == atPrev.end())
+      atNew.push_back(path);
+  }
 }
 
 void initialPaths(Node* cur)
@@ -532,7 +649,9 @@ int fillPaths(Node* term)
   atPrev.clear(), lbPrev.clear(), vrPrev.clear();
 
   initialPaths(term);
-  atComposeFromList(lbNew, atNew);
+
+  for (int i = 0; i < 20; i++)
+    atComposeFromList(lbNew, atNew);
 
   int changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
 
@@ -585,9 +704,25 @@ int fillPaths(Node* term)
     changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
     atNew.clear(), lbNew.clear(), vrNew.clear();
 
-    atComposeFromList(lbPrev, atPrev);
-    atComposeFromList(lbPaths, atPrev);
-    atComposeFromList(lbPrev, atPaths);
+    int atchanges = 1;
+    while (atchanges)
+    {
+      atComposeFromList(lbPrev, atPrev);
+      atComposeFromList(lbPaths, atPrev);
+      atComposeFromList(lbPrev, atPaths);
+
+      for (auto path : atNew)
+        atPrev.push_back(path);
+
+      for (auto path : lbNew)
+        lbPrev.push_back(path);
+
+      for (auto path : vrNew)
+        vrPrev.push_back(path);
+
+      atchanges = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
+      atNew.clear(), lbNew.clear(), vrNew.clear();
+    }
 
     for (auto path : atNew)
       atPrev.push_back(path);
@@ -767,10 +902,13 @@ void linearize(Path p, Node* term)
   replace(term, p.back(), num);
   replace_n(term, p.front(), num);
 
-  printf("%s: (%s, %s) - ", p.c_str(), p.back().c_str(), p.front().c_str());
-  printf("%d of %s", num, n->var.c_str());
-  printf(" not");
-  printf(" linear\n");
+  if (verbose)
+  {
+    printf("%s: (%s, %s) - ", p.c_str(), p.back().c_str(), p.front().c_str());
+    printf("%d of %s", num, n->var.c_str());
+    printf(" not");
+    printf(" linear\n");
+  }
 }
 
 Node* substitute(Node* term, Node* sb, string var)
@@ -798,6 +936,7 @@ Node* substitute(Node* term, Node* sb, string var)
     return term;
   else
   {
+    subs++;
     weakLevel++;
     return copyTerm(sb, mknode(), term->par);
   }
@@ -869,6 +1008,99 @@ Node* normalize(Node* term, bool &isWeak, int verbose = 0)
   return fin;
 }
 
+int countTot(Node* term, string var)
+{
+  if (term == NULL)
+    return 0;
+
+  if (nApp(term))
+    return countTot(term->abt, var) + countTot(term->arg, var);
+  else if (nLambda(term))
+  {
+    if (term->var != var)
+      return countTot(term->abt, var);
+    return 0;
+  }
+  else
+    return term->var == var;
+}
+
+void countFree(Node* term, multiset<string>& freeSet, map<string, int>& ctMap)
+{
+  if (term == NULL)
+    return;
+
+  if (nApp(term))
+  {
+    countFree(term->abt, freeSet, ctMap);
+    countFree(term->arg, freeSet, ctMap);
+  }
+  else if (nLambda(term))
+  {
+    auto it = freeSet.insert(term->var);
+    countFree(term->abt, freeSet, ctMap);
+    freeSet.erase(it);
+  }
+  else
+  {
+    if (freeSet.find(term->var) == freeSet.end())
+      ctMap[term->var]++;
+  }
+}
+
+int pathInside(Node* term, string var)
+{
+  if (term == NULL)
+    return 0;
+
+  if (term->label == var)
+    return 1;
+
+  if (nApp(term))
+    return (pathInside(term->abt, var) + pathInside(term->arg, var)) > 0;
+  else if (nLambda(term))
+    return pathInside(term->abt, var);
+  else
+    return 0;
+}
+
+PathMetric calcMetric(Path p, Node* term, int s)
+{
+  PathMetric pm;
+
+  Node* st = labelNode[p.back()];
+  Node* ed = labelNode[p.front()]->par->arg;
+
+  int n = max(1, countTot(st->abt, st->var));
+
+  multiset<string> freeSet;
+  map<string, int> ctMap;
+  countFree(ed, freeSet, ctMap);
+
+  vector<int> mset;
+  for (auto pt : ctMap)
+    mset.push_back(pt.second);
+  sort(mset.begin(), mset.end());
+
+  pm.s = s;
+  pm.n = n;
+  pm.mset = mset;
+
+  return pm;
+}
+
+vector<pair<PathMetric, Path> > fillMetricList(int iter, Node* term)
+{
+  vector<pair<PathMetric, Path> > metricList;
+  for (int i = 0; i < iter; i++)
+    for (auto path : S[i])
+      metricList.push_back(make_pair(calcMetric(path, term, i), path));
+
+  sort(metricList.begin(), metricList.end());
+
+  return metricList;
+}
+
 int main(int argc, char** argv)
 {
   execType = TYPE_PRINT;
@@ -888,6 +1120,10 @@ int main(int argc, char** argv)
       execType = TYPE_REDUCE;
     else if (argv[i][1] == 'w')
       execType = TYPE_WEAK;
+    else if (argv[i][1] == 'm')
+      execType = TYPE_METRIC;
+    else if (argv[i][1] == 'v')
+      verbose = true;
   }
 
   scanf(" %s", input);
@@ -903,7 +1139,7 @@ int main(int argc, char** argv)
     printf("\n");
   }
 
-  labelTerm(term, 'a');
+  labelTerm(term, "a");
 
   if (execType == TYPE_PRINT || execType == TYPE_TERM)
   {
@@ -931,6 +1167,7 @@ int main(int argc, char** argv)
   }
   else if (execType == TYPE_LINEAR)
   {
+    vector<pair<PathMetric, Path> > pMetricList, cMetricList;
     bool linear = false;
     int iter;
 
@@ -939,8 +1176,16 @@ int main(int argc, char** argv)
       linear = true;
       
       labelNode.clear();
-      labelTerm(term, 'a');
+      labelTerm(term, "a");
       iter = fillPaths(term);
+      cMetricList = fillMetricList(iter, term);
+
+      if (verbose)
+        for (auto ele : cMetricList)
+        {
+          printf("%s :", ele.first.c_str());
+          printf(" %s\n", ele.second.c_str());
+        }
 
       for (int i = 0; i < iter; i++)
         for (auto path : S[i])
@@ -948,39 +1193,67 @@ int main(int argc, char** argv)
           {
             linearize(path, term);
 
-            printTerm(term);
+            varMap.clear();
+            varTerm(term, 'a');
+
+            printTerm(term, 0);
             printf("\n");
+
             checkPar(term, NULL);
             linear = false;
             goto reset;
           }
 
     reset:
-      ;
+      if (!pMetricList.empty())
+      {
+        bool fl = false;
+        for (int i = 0; i < int(pMetricList.size()) && i < int(cMetricList.size()); i++)
+        {
+          if (pMetricList[i].first.cmp(cMetricList[i].first))
+          {
+            printf("Index: %d\n", i);
+            fl = true;
+            break;
+          
+          }
+
+          if (cMetricList[i].first.cmp(pMetricList[i].first))
+            break;
+        }   
+
+        if (fl)
+          printf("Not smaller...\n");
+      }
+
+      pMetricList = cMetricList;
     }
 
-    labelTerm(term, 'a');
+    labelTerm(term, "a");
     varMap.clear();
     varTerm(term, 'a');
 
-    printTerm(term, 0);
-    printf("\n");
-
-    printTerm(term, 1);
-    printf("\n");
-
-    for (int i = 0; i < iter; i++)
+    if (verbose)
     {
-      printf("S%d: {", i + 1);
+      printTerm(term, 1);
+      printf("\n");
+    }
 
-      for (auto path : S[i])
+    if (verbose)
+    {
+      for (int i = 0; i < iter; i++)
       {
-        printf("%s", path.c_str());
-        if (path != S[i].back())
-          printf(",");
-      }
+        printf("S%d: {", i + 1);
+        
+        for (auto path : S[i])
+        {
+          printf("%s", path.c_str());
+          if (path != S[i].back())
+            printf(",");
+        }
 
-      printf("}\n");
+        printf("}\n");
+      }
     }
   }
   else if (execType == TYPE_REDUCE)
@@ -993,6 +1266,8 @@ int main(int argc, char** argv)
 
     printTerm(final);
     printf("\n");
+
+    printf("Subs: %d\n", subs);
   }
   else if (execType == TYPE_WEAK)
   {
@@ -1000,6 +1275,17 @@ int main(int argc, char** argv)
     Node* final = normalize(term, isWeak, 1);
 
     printf("The term is %s linear\n", isWeak ? "weak" : "not weak");
+  }
+  else if (execType == TYPE_METRIC)
+  {
+    int iter = fillPaths(term);
+    vector<pair<PathMetric, Path> > metricList = fillMetricList(iter, term);
+
+    for (auto ele : metricList)
+    {
+      printf("%s :", ele.first.c_str());
+      printf(" %s\n", ele.second.c_str());
+    }
   }
 
   return 0;
