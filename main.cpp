@@ -9,9 +9,10 @@
 using namespace std;
 
 #define MXTERM 1000
-#define MXITER 10
+#define MXITER 11
 #define MXLABEL 50
 #define MXLEVEL 20
+#define MXSTEPS 6
 
 #define TYPE_PRINT 0
 #define TYPE_LINEAR 1
@@ -133,11 +134,11 @@ struct PathMetric
       if (s != b.s)
         return s > b.s;
       if (n != b.n)
-        return n < b.n;
+        return n > b.n;
       for (int i = 0; i < int(mset.size()) && i < int(b.mset.size()); i++)
         if (mset[i] != b.mset[i])
-          return mset[i] < b.mset[i];
-      return mset.size() < b.mset.size();
+          return mset[i] > b.mset[i];
+      return mset.size() > b.mset.size();
     }
 
   bool cmp(PathMetric b)
@@ -650,7 +651,7 @@ int fillPaths(Node* term)
 
   initialPaths(term);
 
-  for (int i = 0; i < 20; i++)
+  for (int i = 0; i < MXITER; i++)
     atComposeFromList(lbNew, atNew);
 
   int changes = !atNew.empty() || !lbNew.empty() || !vrNew.empty();
@@ -1081,6 +1082,7 @@ PathMetric calcMetric(Path p, Node* term, int s)
   for (auto pt : ctMap)
     mset.push_back(pt.second);
   sort(mset.begin(), mset.end());
+  reverse(mset.begin(), mset.end());
 
   pm.s = s;
   pm.n = n;
@@ -1170,9 +1172,11 @@ int main(int argc, char** argv)
     vector<pair<PathMetric, Path> > pMetricList, cMetricList;
     bool linear = false;
     int iter;
+    int steps = 0;
 
-    while (!linear)
+    while (!linear && steps < MXSTEPS)
     {
+      steps++;
       linear = true;
       
       labelNode.clear();
